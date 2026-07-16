@@ -89,10 +89,19 @@ async function init() {
   const welcome      = new WelcomeScreen();
   loadingScreen.setProgress(98);
 
-  // ─── Spawn inicial ───────────────────────────────────────
-  const spawnX = SPAWN_AREA?.spawnX ?? 0;
-  const spawnZ = SPAWN_AREA?.spawnZ ?? 2;
-  engine.camera.position.set(spawnX, PLAYER_HEIGHT, spawnZ);
+  // ─── Spawn inicial: vista aérea maqueta rotando lentamente ────────
+  engine.camera.position.set(28, 22, 28);
+  engine.orbitControls.target.set(0, 2, 3);
+  engine.orbitControls.enabled = true;
+  engine.orbitControls.autoRotate = true;
+  engine.orbitControls.autoRotateSpeed = 0.4;
+
+  // Mouse coords para raycast en vista global
+  const mouse = new THREE.Vector2();
+  window.addEventListener('mousemove', (e) => {
+    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  });
 
   // ─── Iluminación inicial ─────────────────────────────────
   lighting.setActiveArea('lobby');
@@ -107,10 +116,24 @@ async function init() {
   appState = APP_STATE.WELCOME;
   welcome.show();
 
-  // ─── Event: iniciar recorrido ────────────────────────────
+  // ─── Event: iniciar recorrido (entra a Vista Global interactiva) ──────
   EventBus.on('welcome:start', () => {
     welcome.hide();
-    controls.lock();
+    appState = 'GLOBAL_VIEW';
+    engine.orbitControls.autoRotate = false;
+    hud.show();
+    minimap.show();
+    EventBus.emit('camera:mode:updated', { mode: 'global' });
+  });
+
+  // ─── Event: Cambio de modo de cámara desde el HUD ────────
+  EventBus.on('camera:mode:change', ({ mode }) => {
+    if (mode === 'global' && appState === APP_STATE.PLAYING) {
+      _transitionToGlobalView(engine, controls, lighting);
+    } else if (mode === 'fps' && appState === 'GLOBAL_VIEW') {
+      // Teletransportar al lobby por defecto
+      _transitionToAreaFPS(SPAWN_AREA, engine, controls, lighting);
+    }
   });
 
   // ─── Event: PointerLock ──────────────────────────────────
@@ -119,52 +142,91 @@ async function init() {
       appState = APP_STATE.PLAYING;
       hud.show();
       minimap.show();
+      EventBus.emit('camera:mode:updated', { mode: 'fps' });
     } else {
-      // Si no hay modal abierto, mostrar bienvenida de nuevo
-      if (appState !== APP_STATE.MODAL_OPEN) {
-        appState = APP_STATE.WELCOME;
-        welcome.show();
-        hud.hide();
+      // Si salimos de PointerLock y no hay modal abierto, volver a Vista Global en vez de Welcome
+      if (appState !== APP_STATE.MODAL_OPEN && appState === APP_STATE.PLAYING) {
+        _transitionToGlobalView(engine, controls, lighting);
       }
     }
   });
 
   // ─── Event: Modal ────────────────────────────────────────
   EventBus.on('modal:open', () => {
+    this_appState_before_modal = appState;
     appState = APP_STATE.MODAL_OPEN;
     controls.unlock();
   });
+  let this_appState_before_modal = 'GLOBAL_VIEW';
   EventBus.on('modal:close', () => {
-    appState = APP_STATE.PLAYING;
-    controls.lock();
+    if (this_appState_before_modal === 'GLOBAL_VIEW') {
+      appState = 'GLOBAL_VIEW';
+      engine.orbitControls.enabled = true;
+    } else {
+      appState = APP_STATE.PLAYING;
+      controls.lock();
+    }
   });
 
   // ─── Event: Teletransporte por Minimap ───────────────────
   EventBus.on('minimap:teleport', ({ area }) => {
-    if (appState !== APP_STATE.PLAYING) return;
-    _teleportToArea(area, engine, controls, lighting);
+    if (appState === 'GLOBAL_VIEW') {
+      _transitionToAreaFPS(area, engine, controls, lighting);
+    } else if (appState === APP_STATE.PLAYING) {
+      _teleportToArea(area, engine, controls, lighting);
+    }
   });
 
-  // ─── Event: Interacción con hotspot ──────────────────────
+  // ─── Event: Interacción con hotspot (tecla E) ────────────
   EventBus.on('interact', () => {
     if (appState !== APP_STATE.PLAYING) return;
     const nearestHotspot = collision.getNearestInteractable(engine.camera.position);
     if (nearestHotspot) nearestHotspot.interact();
   });
 
-  // ─── Click en canvas para interacción raycast ────────────
-  document.addEventListener('click', () => {
-    if (appState !== APP_STATE.PLAYING) return;
-    const dir = controls.direction;
-    const hotspotMeshes = areaManager.hotspots.flatMap(h => [h._inner, h._outer]);
-    const hit = collision.raycastClick(engine.camera.position, dir, hotspotMeshes);
-    if (hit?.object?.userData?.hotspot) {
-      hit.object.userData.hotspot.interact();
+  // ─── Click en canvas: Raycast de interacción ──────────────
+  document.addEventListener('click', (e) => {
+    // Si hace click en botones del HUD, ignorar raycast
+    if (e.target.closest('.hud-camera-toggle') || e.target.closest('.modal-card')) return;
+
+    if (appState === 'GLOBAL_VIEW') {
+      // Click en vista global -> Raycast desde cámara con coordenadas del mouse
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouse, engine.camera);
+      const hotspotMeshes = areaManager.hotspots.flatMap(h => [h._inner, h._outer]);
+      const hits = raycaster.intersectObjects(hotspotMeshes);
+      
+      if (hits.length > 0) {
+        const hotspot = hits[0].object.userData.hotspot;
+        if (hotspot) {
+          const area = AREA_DEFINITIONS.find(a => a.id === hotspot.areaId);
+          if (area) {
+            _transitionToAreaFPS(area, engine, controls, lighting);
+            // Mostrar modal del producto seleccionado tras el zoom
+            setTimeout(() => {
+              productModal.open(hotspot.equipmentId);
+            }, 1300);
+          }
+        }
+      }
+    } else if (appState === APP_STATE.PLAYING) {
+      // Click en primera persona (FPS) -> Raycast al centro de la mira
+      const dir = controls.direction;
+      const hotspotMeshes = areaManager.hotspots.flatMap(h => [h._inner, h._outer]);
+      const hit = collision.raycastClick(engine.camera.position, dir, hotspotMeshes);
+      if (hit?.object?.userData?.hotspot) {
+        hit.object.userData.hotspot.interact();
+      }
     }
   });
 
   // ─── Game Loop ───────────────────────────────────────────
   engine.onUpdate((dt, elapsed) => {
+    // Si está en bienvenida o vista global, actualizar rotación
+    if (appState === APP_STATE.WELCOME || appState === 'GLOBAL_VIEW') {
+      engine.orbitControls.update();
+    }
+
     if (appState !== APP_STATE.PLAYING) return;
 
     // Mover al jugador
@@ -182,14 +244,47 @@ async function init() {
     // Lazy load del área actual
     const aId = areaManager.currentAreaId;
     if (aId && !eqLoader.isAreaLoaded(aId)) {
-      eqLoader.loadAreaEquipment(aId); // no await — carga en segundo plano
+      eqLoader.loadAreaEquipment(aId); // carga en segundo plano
     }
   });
 
   engine.start();
 }
 
-// ─── Teletransporte con fade ─────────────────────────────
+// ─── Transición a vista FPS con zoom ───────────────────────
+function _transitionToAreaFPS(area, engine, controls, lighting) {
+  appState = 'GLOBAL_VIEW_TWEEN';
+  controls.resetKeys();
+  engine.orbitControls.enabled = false;
+
+  const targetPos = new THREE.Vector3(area.cx, area.y + PLAYER_HEIGHT, area.cz);
+  const targetLook = new THREE.Vector3(area.cx, area.y + PLAYER_HEIGHT, area.cz - 2);
+
+  engine.tweenCamera(targetPos, targetLook, 1.2, () => {
+    controls.setBaseY(area.y);
+    lighting.setActiveArea(area.id);
+    controls.lock(); // Esto levantará pointerlock y cambiará estado a PLAYING
+  });
+}
+
+// ─── Transición a vista global maqueta 3D ───────────────────
+function _transitionToGlobalView(engine, controls, lighting) {
+  appState = 'GLOBAL_VIEW_TWEEN';
+  controls.unlock();
+  controls.resetKeys();
+
+  const targetPos = new THREE.Vector3(28, 22, 28);
+  const targetLook = new THREE.Vector3(0, 2, 3);
+
+  engine.tweenCamera(targetPos, targetLook, 1.2, () => {
+    appState = 'GLOBAL_VIEW';
+    engine.orbitControls.enabled = true;
+    engine.orbitControls.target.copy(targetLook);
+    EventBus.emit('camera:mode:updated', { mode: 'global' });
+  });
+}
+
+// ─── Teletransporte con fade (Primera Persona a Primera Persona) ─
 function _teleportToArea(area, engine, controls, lighting) {
   const overlay = document.getElementById('elevator-overlay');
   overlay.innerHTML = `

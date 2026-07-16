@@ -42,7 +42,7 @@ export class HospitalBuilder {
     this._buildFloors(FloorPlan.upperFloor, FLOOR_Y.UPPER);
     this._buildCorridors();
     this._buildElevator();
-    this._buildExteriorWalls();
+    this._buildFloorSlabs();
     this._buildLandmarks();
     this._addLightsToAreas();
     this._commitMergedGeometry();
@@ -50,18 +50,8 @@ export class HospitalBuilder {
 
   _buildFloors(rooms, baseY) {
     for (const room of rooms) {
-      // Piso
-      const floorGeo = new THREE.BoxGeometry(room.w, FLOOR_THICKNESS, room.d);
-      const floorMesh = new THREE.Mesh(floorGeo, this._matFloor);
-      floorMesh.position.set(room.x + room.w / 2, baseY - FLOOR_THICKNESS / 2, room.z + room.d / 2);
-      floorMesh.receiveShadow = true;
-      this.scene.add(floorMesh);
-
-      // Techo de la habitación
-      const ceilGeo = new THREE.BoxGeometry(room.w, FLOOR_THICKNESS, room.d);
-      const ceilMesh = new THREE.Mesh(ceilGeo, this._matCeiling);
-      ceilMesh.position.set(room.x + room.w / 2, baseY + ROOM_HEIGHT + FLOOR_THICKNESS / 2, room.z + room.d / 2);
-      this.scene.add(ceilMesh);
+      // Los pisos y techos individuales se eliminan para evitar traslape
+      // de cajas y usar en su lugar las placas biseladas unificadas (_buildFloorSlabs).
 
       // 🔧 Ajuste — el muro trasero (Sur) lleva un tinte pastel del color de
       // área en vez de un panel de color saturado aparte: la referencia es
@@ -96,34 +86,39 @@ export class HospitalBuilder {
         WALL_THICKNESS, wh, room.d
       );
 
-      // 🔧 Ajuste — más vidrio, menos muro sólido (look esmerilado de la referencia)
-      // Pared Norte — vidrio (hacia sala/pasillo contiguo)
-      this.wallBuilder.createGlassWall(
-        cx, baseY, room.z,
-        room.w, wh, true
-      );
-      // Pared Este — vidrio (hacia el pasillo)
-      this.wallBuilder.createGlassWall(
-        room.x + room.w, baseY, cz,
-        room.d, wh, false
-      );
+      // 🔧 Ajuste — Esquinas redondeadas de vidrio translúcido para imitar el look de cápsula
+      const isCornerRoom = ['quirofano', 'toco_cirugia', 'hospitalizacion', 'urgencias', 'ucin_utip'].includes(room.id);
+
+      if (isCornerRoom) {
+        const radius = 1.8; // radio de curvatura
+        
+        // Esquina curva de vidrio en el extremo Noreste (room.x + room.w, room.z)
+        this.wallBuilder.createCurvedGlassWall(
+          room.x + room.w - radius, baseY, room.z + radius,
+          radius, 0, Math.PI / 2, wh
+        );
+
+        // Pared Norte (recortada para dar espacio al arco curvo)
+        this.wallBuilder.createGlassWall(
+          cx - radius / 2, baseY, room.z,
+          room.w - radius, wh, true
+        );
+
+        // Pared Este (recortada para dar espacio al arco curvo)
+        this.wallBuilder.createGlassWall(
+          room.x + room.w, baseY, cz + radius / 2,
+          room.d - radius, wh, false
+        );
+      } else {
+        // Paredes de vidrio planas tradicionales para el resto
+        this.wallBuilder.createGlassWall(cx, baseY, room.z, room.w, wh, true);
+        this.wallBuilder.createGlassWall(room.x + room.w, baseY, cz, room.d, wh, false);
+      }
     }
   }
 
   _buildCorridors() {
-    for (const corr of FloorPlan.corridors) {
-      const geo = new THREE.BoxGeometry(corr.w, FLOOR_THICKNESS, corr.d);
-      const mesh = new THREE.Mesh(geo, this._matFloor);
-      mesh.position.set(corr.x, corr.y - FLOOR_THICKNESS / 2, corr.z);
-      mesh.receiveShadow = true;
-      this.scene.add(mesh);
-
-      // Techo de corredor
-      const ceilGeo = new THREE.BoxGeometry(corr.w, FLOOR_THICKNESS, corr.d);
-      const ceilMesh = new THREE.Mesh(ceilGeo, this._matCeiling);
-      ceilMesh.position.set(corr.x, corr.y + ROOM_HEIGHT + FLOOR_THICKNESS / 2, corr.z);
-      this.scene.add(ceilMesh);
-    }
+    // Los pasillos están integrados en las placas de piso unificadas
   }
 
   // 🔧 Ajuste: Elevador — teletransporta entre plantas con fade
@@ -164,41 +159,78 @@ export class HospitalBuilder {
     shaftMesh.userData.isWall = false; // No bloquea
   }
 
-  // 🔧 Ajuste — silueta exterior redondeada (cápsula) en vez de caja recta,
-  // para acercarse al edificio de esquinas curvas de la imagen de referencia.
-  _buildExteriorWalls() {
-    const totalW = 45;
-    const totalD = 35;
+  // 🔧 Ajuste — Silueta exterior abierta con placas de piso/techo redondeadas de gran espesor
+  // tal y como se ve en la maqueta de la imagen de referencia.
+  _buildFloorSlabs() {
+    const totalW = 54;
+    const totalD = 40;
     const cx = 0;
-    const cz = 5;
-    const wh = ROOM_HEIGHT;
-    const radius = 6; // radio de esquina
+    const cz = 3;
+    const radius = 8; // radio de esquina amplio
+    const slabThickness = 0.35;
 
-    const extMat = new THREE.MeshStandardMaterial({
-      color: 0xe8edf2,
-      roughness: 0.9,
-      side: THREE.DoubleSide,
+    // Material blanco semibrillante premium para las placas estructurales
+    const slabMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.18,
+      metalness: 0.15,
     });
 
-    const outerShape = this._roundedRectShape(totalW, totalD, radius);
-    const innerShape = this._roundedRectShape(totalW - WALL_THICKNESS * 2, totalD - WALL_THICKNESS * 2, Math.max(radius - WALL_THICKNESS, 0.1));
-    outerShape.holes.push(innerShape);
+    // 1. Placa de piso Planta Baja
+    const shapeGB = this._roundedRectShape(totalW, totalD, radius);
+    const geoGB = new THREE.ExtrudeGeometry(shapeGB, {
+      depth: slabThickness,
+      bevelEnabled: true,
+      bevelThickness: 0.08,
+      bevelSize: 0.08,
+      curveSegments: 32
+    });
+    geoGB.rotateX(-Math.PI / 2);
+    geoGB.translate(cx, -slabThickness, cz);
+    const slabGB = new THREE.Mesh(geoGB, slabMat);
+    slabGB.receiveShadow = true;
+    this.scene.add(slabGB);
 
-    const shellGeo = new THREE.ExtrudeGeometry(outerShape, { depth: wh, bevelEnabled: false, curveSegments: 24 });
-    shellGeo.rotateX(-Math.PI / 2);
-    shellGeo.translate(cx, 0, cz);
-    const shellMesh = new THREE.Mesh(shellGeo, extMat);
-    shellMesh.userData.isWall = true;
-    shellMesh.receiveShadow = true;
-    this.scene.add(shellMesh);
-    this.collision.addWall(shellMesh);
+    // 2. Placa de piso Planta Alta (techo Planta Baja)
+    // Para lograr el estilo "maqueta cutaway", esta placa tiene bordes biselados hermosos
+    const shapePA = this._roundedRectShape(totalW * 0.94, totalD * 0.94, radius);
+    const geoPA = new THREE.ExtrudeGeometry(shapePA, {
+      depth: slabThickness,
+      bevelEnabled: true,
+      bevelThickness: 0.08,
+      bevelSize: 0.08,
+      curveSegments: 32
+    });
+    geoPA.rotateX(-Math.PI / 2);
+    geoPA.translate(cx, FLOOR_Y.UPPER - slabThickness, cz);
+    const slabPA = new THREE.Mesh(geoPA, slabMat);
+    slabPA.receiveShadow = true;
+    slabPA.castShadow = true;
+    this.scene.add(slabPA);
+
+    // 3. Placa de techo Planta Alta
+    const geoTecho = new THREE.ExtrudeGeometry(shapePA, {
+      depth: slabThickness,
+      bevelEnabled: true,
+      bevelThickness: 0.08,
+      bevelSize: 0.08,
+      curveSegments: 32
+    });
+    geoTecho.rotateX(-Math.PI / 2);
+    geoTecho.translate(cx, FLOOR_Y.UPPER + ROOM_HEIGHT, cz);
+    const slabTecho = new THREE.Mesh(geoTecho, slabMat);
+    slabTecho.castShadow = true;
+    this.scene.add(slabTecho);
 
     // Suelo exterior (gran plano)
-    const groundGeo = new THREE.PlaneGeometry(200, 200);
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0xc8d5e0 });
+    const groundGeo = new THREE.PlaneGeometry(300, 300);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0xd8e4f0, // combina con la niebla para horizonte infinito
+      roughness: 0.9,
+    });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.01;
+    ground.position.y = -slabThickness - 0.02;
     ground.receiveShadow = true;
     this.scene.add(ground);
   }

@@ -106,4 +106,44 @@ export class WallBuilder {
 
     return group;
   }
+
+  // Crear pared de vidrio curvo (esquina de cápsula)
+  createCurvedGlassWall(x, y, z, radius, angleStart, angleLength, height) {
+    const group = new THREE.Group();
+
+    // Vidrio curvo
+    const glassGeo = new THREE.CylinderGeometry(
+      radius, radius, height,
+      24, 1, true,
+      angleStart, angleLength
+    );
+    const glass = new THREE.Mesh(glassGeo, this._matGlass);
+    group.add(glass);
+
+    // Marcos metálicos curvos en parte superior e inferior
+    const frameThickness = 0.05;
+    const topFrameGeo = new THREE.CylinderGeometry(
+      radius, radius, frameThickness,
+      24, 1, true,
+      angleStart, angleLength
+    );
+    
+    const topFrame = new THREE.Mesh(topFrameGeo, this._matFrame);
+    topFrame.position.y = height / 2 - frameThickness / 2;
+    group.add(topFrame);
+
+    const bottomFrame = topFrame.clone();
+    bottomFrame.position.y = -height / 2 + frameThickness / 2;
+    group.add(bottomFrame);
+
+    group.position.set(x, y + height / 2, z);
+    this.scene.add(group);
+
+    // Registrar para colisión (evitar atravesar el vidrio curvo)
+    // El raycast simple funciona con cilindros
+    glass.userData.isWall = true;
+    this.collision?.addWall(glass);
+
+    return group;
+  }
 }

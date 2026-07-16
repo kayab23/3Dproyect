@@ -107,6 +107,15 @@ export class Controls {
     }
   }
 
+  resetKeys() {
+    this._keys.w = false;
+    this._keys.a = false;
+    this._keys.s = false;
+    this._keys.d = false;
+    this._keys.shift = false;
+    this._isMoving = false;
+  }
+
   setBaseY(y) {
     this._baseY = y + PLAYER_HEIGHT;
     this.camera.position.y = this._baseY;
