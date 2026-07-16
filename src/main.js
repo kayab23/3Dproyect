@@ -269,6 +269,9 @@ async function init() {
     const isGlobal = appState === 'GLOBAL_VIEW' || appState === APP_STATE.WELCOME || appState === 'GLOBAL_VIEW_TWEEN';
     hud.updateRoomLabels(engine.camera, isGlobal ? 'global' : 'fps');
 
+    // Animación de los monitores de signos vitales (ECG dinámico)
+    roomFactory.update(dt, elapsed);
+
     // Animación del rayo de luz guía (3D Waypoint)
     if (waypointIndicator && waypointIndicator.visible) {
       ring.rotation.z += dt * 0.7;
