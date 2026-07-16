@@ -96,6 +96,14 @@ export class Controls {
       this.camera.position.add(delta);
     }
 
+    // Limitar posición del jugador dentro de la losa del hospital (evitar caer al vacío)
+    const minX = -26.0, maxX = 26.0;
+    const minZ = -16.5, maxZ = 22.5;
+    if (this.camera.position.x < minX) this.camera.position.x = minX;
+    if (this.camera.position.x > maxX) this.camera.position.x = maxX;
+    if (this.camera.position.z < minZ) this.camera.position.z = minZ;
+    if (this.camera.position.z > maxZ) this.camera.position.z = maxZ;
+
     // Head bobbing
     if (moving) {
       this._bobTime += dt * HEAD_BOB_FREQ * (this._keys.shift ? 1.6 : 1);

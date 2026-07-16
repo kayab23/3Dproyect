@@ -14,7 +14,7 @@ import { FloorPlan }       from './hospital/FloorPlan.js';
 
 // Áreas
 import { AreaManager }     from './areas/AreaManager.js';
-import { AREA_DEFINITIONS, SPAWN_AREA } from './areas/areaDefinitions.js';
+import { AREA_DEFINITIONS, SPAWN_AREA, AREAS_BY_ID } from './areas/areaDefinitions.js';
 
 // Equipment
 import { EquipmentLoader } from './equipment/EquipmentLoader.js';
@@ -54,6 +54,8 @@ let hospitalBuilder = null;
 let currentFloorY = 8.0;
 let targetFloorY = 8.0;
 let elevatorTransitionActive = false;
+let gpsTrailGroup = null;
+let playerControls = null;
 
 let appState = APP_STATE.LOADING;
 
@@ -70,6 +72,7 @@ async function init() {
   const collision  = new CollisionSystem(engine.scene);
   const lighting   = new Lighting(engine.scene);
   const controls   = new Controls(engine.camera, document.body);
+  playerControls = controls;
   loadingScreen.setProgress(25);
 
   // ─── Construir Hospital ──────────────────────────────────
@@ -126,6 +129,10 @@ async function init() {
   waypointIndicator = new THREE.Group();
   waypointIndicator.add(shaft, ring);
   engine.scene.add(waypointIndicator);
+
+  // Inicializar rastro de guía GPS en el suelo
+  gpsTrailGroup = new THREE.Group();
+  engine.scene.add(gpsTrailGroup);
 
   // ─── Equipment Loader (lazy) ─────────────────────────────
   const eqLoader = new EquipmentLoader();
@@ -307,6 +314,28 @@ async function init() {
     // Mover al jugador
     controls.update(dt, elapsed, collision);
 
+    // Actualizar rastro GPS interactivo de guía en el suelo
+    const activeMission = TOUR_MISSIONS[currentMissionIndex];
+    if (activeMission) {
+      updateGPSTrail(engine.camera.position, activeMission.areaId);
+    } else {
+      while (gpsTrailGroup.children.length > 0) {
+        const obj = gpsTrailGroup.children.pop();
+        obj.geometry.dispose();
+        obj.material.dispose();
+      }
+    }
+
+    // Animación de pulso de onda fluyente del rastro GPS
+    if (gpsTrailGroup && gpsTrailGroup.children.length > 0) {
+      gpsTrailGroup.children.forEach((dot, index) => {
+        const offset = index * 0.28;
+        const wave = 0.45 + Math.sin(elapsed * 4.5 - offset) * 0.35;
+        if (dot.material) dot.material.opacity = wave;
+        dot.scale.set(0.7 + wave * 0.5, 1.0, 0.7 + wave * 0.5);
+      });
+    }
+
     // Detección de entrada al elevador (Cambio de Planta)
     const e = FloorPlan.elevator;
     const playerPos = engine.camera.position;
@@ -466,6 +495,68 @@ function updateMission(engine) {
       desc: mission.desc,
       progress: `${visitedAreas.size} / ${TOUR_MISSIONS.length} salas`
     });
+  }
+}
+
+// --- Dibuja y actualiza la guía GPS en el suelo del hospital ---
+function updateGPSTrail(playerPos, targetAreaId) {
+  // Limpiar el rastro anterior
+  while(gpsTrailGroup.children.length > 0) {
+    const obj = gpsTrailGroup.children.pop();
+    obj.geometry.dispose();
+    obj.material.dispose();
+  }
+
+  // Solo mostrar la línea en primera persona (cuando estamos navegando)
+  if (appState !== APP_STATE.PLAYING || !playerControls) return;
+
+  const targetArea = AREAS_BY_ID[targetAreaId];
+  if (!targetArea) return;
+
+  const playerFloor = playerControls.getBaseY() > 1.5 ? 'UPPER' : 'GROUND';
+  const targetFloor = targetArea.floor;
+
+  const points = [];
+  const startY = playerControls.getBaseY() + 0.04; // ligeramente sobre el piso
+
+  if (playerFloor !== targetFloor) {
+    // Si están en diferentes pisos, guiar al elevador
+    const e = FloorPlan.elevator;
+    points.push(new THREE.Vector3(playerPos.x, startY, playerPos.z));
+    points.push(new THREE.Vector3(playerPos.x, startY, -1.0)); // horizontal corridor
+    points.push(new THREE.Vector3(e.x, startY, -1.0));
+    points.push(new THREE.Vector3(e.x, startY, e.z));
+  } else {
+    // Mismo piso: Guiar a la habitación objetivo
+    points.push(new THREE.Vector3(playerPos.x, startY, playerPos.z));
+    points.push(new THREE.Vector3(playerPos.x, startY, -1.0)); // horizontal corridor
+    points.push(new THREE.Vector3(targetArea.cx, startY, -1.0));
+    points.push(new THREE.Vector3(targetArea.cx, startY, targetArea.cz));
+  }
+
+  // Dibujar puntos intermedios a lo largo de los segmentos para hacer la guía punteada
+  const dotSpacing = 0.9; // 90 cm entre puntos
+  const dotGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.01, 16); // cilindros delgados planos en el suelo
+  
+  for (let i = 0; i < points.length - 1; i++) {
+    const p1 = points[i];
+    const p2 = points[i+1];
+    const dist = p1.distanceTo(p2);
+    const numDots = Math.floor(dist / dotSpacing);
+
+    for (let j = 0; j <= numDots; j++) {
+      const t = j / (numDots || 1);
+      const dotPos = new THREE.Vector3().lerpVectors(p1, p2, t);
+      
+      const dotMat = new THREE.MeshBasicMaterial({
+        color: 0x00d4ff,
+        transparent: true,
+        opacity: 0.85
+      });
+      const dot = new THREE.Mesh(dotGeo, dotMat);
+      dot.position.copy(dotPos);
+      gpsTrailGroup.add(dot);
+    }
   }
 }
 

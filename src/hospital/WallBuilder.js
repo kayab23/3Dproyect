@@ -101,6 +101,7 @@ export class WallBuilder {
     // del grupo vía la jerarquía de la escena, no hay que sumarla de nuevo
     this.collision?.addWall(left);
     this.collision?.addWall(right);
+    this.collision?.addWall(glass);
 
     return group;
   }
