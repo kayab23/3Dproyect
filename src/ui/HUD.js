@@ -1,5 +1,6 @@
+import * as THREE from 'three';
 import { EventBus } from '../utils/helpers.js';
-import { AREAS_BY_ID } from '../areas/areaDefinitions.js';
+import { AREA_DEFINITIONS, AREAS_BY_ID } from '../areas/areaDefinitions.js';
 import { EquipmentCatalog } from '../equipment/EquipmentCatalog.js';
 
 // ============================================================
@@ -14,6 +15,7 @@ export class HUD {
     this._catalog = new EquipmentCatalog();
     this._currentArea = null;
     this._render();
+    this._initRoomLabels();
     this._bindEvents();
   }
 
@@ -26,6 +28,7 @@ export class HUD {
           <div class="hud-area-floor" id="hud-area-floor">Planta Baja</div>
         </div>
       </div>
+      
       <div class="hud-camera-toggle">
         <button class="hud-toggle-btn active" id="btn-mode-global">
           <span class="toggle-icon">🌐</span> Vista Global
@@ -34,6 +37,17 @@ export class HUD {
           <span class="toggle-icon">🚶</span> Explorar a Pie
         </button>
       </div>
+
+      <!-- Guía Interactiva de Misión -->
+      <div class="hud-guide-card" id="hud-guide-card">
+        <div class="guide-header">
+          <span class="guide-badge">🎯 Misión de Exploración</span>
+          <span class="guide-points" id="guide-points">0 / 8 salas</span>
+        </div>
+        <div class="guide-title" id="guide-target-name">Cargando misión...</div>
+        <div class="guide-desc" id="guide-target-desc">Sigue el rayo de luz celeste en la sala recomendada.</div>
+      </div>
+
       <div class="hud-controls" id="hud-fps-controls">
         <div class="hud-ctrl"><span class="ctrl-key">WASD</span> Mover</div>
         <div class="hud-ctrl"><span class="ctrl-key">E</span> Interactuar</div>
@@ -62,6 +76,11 @@ export class HUD {
     this._btnFPS = document.getElementById('btn-mode-fps');
     this._fpsControls = document.getElementById('hud-fps-controls');
     this._globalControls = document.getElementById('hud-global-controls');
+
+    this._guideCard = document.getElementById('hud-guide-card');
+    this._guideTargetName = document.getElementById('guide-target-name');
+    this._guideTargetDesc = document.getElementById('guide-target-desc');
+    this._guidePoints = document.getElementById('guide-points');
   }
 
   _bindEvents() {
@@ -117,6 +136,72 @@ export class HUD {
         this._interactHint.classList.remove('visible');
       }
     });
+    // Escuchar actualizaciones de la guía de misión
+    EventBus.on('guide:update', ({ task, desc, progress }) => {
+      if (this._guideTargetName) this._guideTargetName.textContent = task;
+      if (this._guideTargetDesc) this._guideTargetDesc.textContent = desc;
+      if (this._guidePoints) this._guidePoints.textContent = progress;
+    });
+  }
+
+  _initRoomLabels() {
+    this._labelsContainer = document.createElement('div');
+    this._labelsContainer.id = 'room-labels-container';
+    this._labelsContainer.className = 'room-labels-container hidden';
+    document.body.appendChild(this._labelsContainer);
+
+    this._labels = [];
+
+    for (const area of AREA_DEFINITIONS) {
+      if (area.id === 'lobby') continue; // Lobby no requiere label
+      const el = document.createElement('div');
+      el.className = 'room-label-bubble';
+      el.dataset.areaId = area.id;
+      el.innerHTML = `
+        <span class="room-label-icon">${area.icon || '🏥'}</span>
+        <span class="room-label-text">${area.name}</span>
+      `;
+
+      // Permitir teletransporte al hacer click en la etiqueta
+      el.addEventListener('click', () => {
+        EventBus.emit('minimap:teleport', { area });
+      });
+
+      this._labelsContainer.appendChild(el);
+      this._labels.push({ el, area });
+    }
+  }
+
+  // Actualiza la posición 2D de las etiquetas de sala proyectando sus coordenadas 3D
+  updateRoomLabels(camera, mode) {
+    if (mode === 'global') {
+      this._labelsContainer.classList.remove('hidden');
+      const tempV = new THREE.Vector3();
+
+      for (const item of this._labels) {
+        const { el, area } = item;
+
+        // Proyectar el centro de la sala
+        tempV.set(area.cx, area.y + 2.0, area.cz);
+        tempV.project(camera);
+
+        // Si la sala queda detrás de la cámara, ocultar
+        if (tempV.z > 1) {
+          el.style.display = 'none';
+          continue;
+        }
+
+        // Convertir coordenadas normalizadas a píxeles
+        const x = (tempV.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (tempV.y * -0.5 + 0.5) * window.innerHeight;
+
+        el.style.display = 'flex';
+        el.style.left = `${x}px`;
+        el.style.top = `${y}px`;
+      }
+    } else {
+      this._labelsContainer.classList.add('hidden');
+    }
   }
 
   show() {
@@ -127,5 +212,6 @@ export class HUD {
   hide() {
     this._el.classList.remove('visible');
     this._crosshair.classList.add('hidden');
+    this._labelsContainer.classList.add('hidden');
   }
 }

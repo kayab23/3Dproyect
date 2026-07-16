@@ -34,6 +34,22 @@ import { FLOOR_Y, PLAYER_HEIGHT, APP_STATE } from './utils/constants.js';
 // MAIN — Punto de entrada de la aplicación
 // ============================================================
 
+// --- Lista de objetivos de exploración interactiva ---
+const TOUR_MISSIONS = [
+  { areaId: 'urgencias', task: 'Explora Urgencias 🚨', desc: 'Sigue el rayo de luz. Conoce el Carro Rojo de reanimación y la camilla eléctrica.' },
+  { areaId: 'quirofano', task: 'Ingresa al Quirófano 🔬', desc: 'Entra a la sala. Observa la mesa quirúrgica motorizada QX-500 y la máquina de anestesia.' },
+  { areaId: 'uci', task: 'Sube a la UCI en Planta Alta 💉', desc: 'Usa el elevador. Examina el Ventilador Mecánico V-Pro y el monitor multiparamétrico.' },
+  { areaId: 'ucin_utip', task: 'Explora UCIN / UTIP 🍼', desc: 'Investiga cuidados neonatales. Descubre la incubadora de cuidado intensivo fija.' },
+  { areaId: 'telemedicina', task: 'Visita Telemedicina 📡', desc: 'Explora telesalud. Observa el carrito integrado TeleMed-Pro.' },
+  { areaId: 'imagenologia', task: 'Ve a Imagenología 🩻', desc: 'Ve a la esquina derecha. Observa el tomógrafo circular y el sistema de rayos X.' },
+  { areaId: 'hemodialisis', task: 'Visita Hemodiálisis 🩸', desc: 'Explora la sala. Revisa las máquinas purificadoras y sillones de diálisis.' },
+  { areaId: 'ambulancia', task: 'Inspecciona la Ambulancia 🚑', desc: 'Ve afuera. Descubre la camilla de transporte plegable y el desfibrilador portátil.' }
+];
+
+let currentMissionIndex = 0;
+const visitedAreas = new Set();
+let waypointIndicator = null;
+
 let appState = APP_STATE.LOADING;
 
 async function init() {
@@ -76,6 +92,32 @@ async function init() {
   const areaManager = new AreaManager(engine.scene, lighting, collision);
   areaManager.buildHotspotsSync(THREE);
   loadingScreen.setProgress(85);
+
+  // ─── Waypoint 3D (Rayo de luz guía) ─────────────────────
+  const waypointGeo = new THREE.CylinderGeometry(1.5, 1.5, 3.2, 16, 1, true);
+  const waypointMat = new THREE.MeshBasicMaterial({
+    color: 0x00B4D8,
+    transparent: true,
+    opacity: 0.18,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending
+  });
+  const shaft = new THREE.Mesh(waypointGeo, waypointMat);
+  shaft.position.y = 1.6;
+
+  const ringGeo = new THREE.RingGeometry(1.45, 1.55, 32);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0x00D4FF,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.05;
+
+  waypointIndicator = new THREE.Group();
+  waypointIndicator.add(shaft, ring);
+  engine.scene.add(waypointIndicator);
 
   // ─── Equipment Loader (lazy) ─────────────────────────────
   const eqLoader = new EquipmentLoader();
@@ -124,6 +166,7 @@ async function init() {
     hud.show();
     minimap.show();
     EventBus.emit('camera:mode:updated', { mode: 'global' });
+    updateMission(engine);
   });
 
   // ─── Event: Cambio de modo de cámara desde el HUD ────────
@@ -222,7 +265,18 @@ async function init() {
 
   // ─── Game Loop ───────────────────────────────────────────
   engine.onUpdate((dt, elapsed) => {
-    // Si está en bienvenida o vista global, actualizar rotación
+    // Actualizar proyección 2D de etiquetas de sala
+    const isGlobal = appState === 'GLOBAL_VIEW' || appState === APP_STATE.WELCOME || appState === 'GLOBAL_VIEW_TWEEN';
+    hud.updateRoomLabels(engine.camera, isGlobal ? 'global' : 'fps');
+
+    // Animación del rayo de luz guía (3D Waypoint)
+    if (waypointIndicator && waypointIndicator.visible) {
+      ring.rotation.z += dt * 0.7;
+      const pulse = 1.0 + Math.sin(elapsed * 4.5) * 0.08;
+      shaft.scale.set(pulse, 1.0, pulse);
+    }
+
+    // Si está en bienvenida o vista global, actualizar rotación de cámara
     if (appState === APP_STATE.WELCOME || appState === 'GLOBAL_VIEW') {
       engine.orbitControls.update();
     }
@@ -241,8 +295,17 @@ async function init() {
     // Actualizar minimap
     minimap.update(engine.camera.position.x, engine.camera.position.z);
 
-    // Lazy load del área actual
+    // Detección de misiones de exploración
     const aId = areaManager.currentAreaId;
+    const currentMission = TOUR_MISSIONS[currentMissionIndex];
+    if (currentMission && aId === currentMission.areaId) {
+      visitedAreas.add(aId);
+      currentMissionIndex++;
+      _flashScreenSuccess();
+      updateMission(engine);
+    }
+
+    // Lazy load del área actual
     if (aId && !eqLoader.isAreaLoaded(aId)) {
       eqLoader.loadAreaEquipment(aId); // carga en segundo plano
     }
@@ -304,6 +367,55 @@ function _teleportToArea(area, engine, controls, lighting) {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// --- Actualiza el objetivo de misión activo y la posición de la baliza guía ---
+function updateMission(engine) {
+  const mission = TOUR_MISSIONS[currentMissionIndex];
+  if (!mission) {
+    // Tour completado!
+    EventBus.emit('guide:update', {
+      task: '¡Tour Completado! 🎉',
+      desc: 'Has visitado todas las áreas recomendadas. ¡Siéntete libre de seguir explorando!',
+      progress: '8 / 8 salas'
+    });
+    if (waypointIndicator) waypointIndicator.visible = false;
+    return;
+  }
+
+  const area = AREA_DEFINITIONS.find(a => a.id === mission.areaId);
+  if (area) {
+    if (waypointIndicator) {
+      // Posicionar la columna de luz guía en el centro de la sala
+      waypointIndicator.position.set(area.cx, area.y, area.cz);
+      waypointIndicator.visible = true;
+    }
+
+    EventBus.emit('guide:update', {
+      task: mission.task,
+      desc: mission.desc,
+      progress: `${visitedAreas.size} / ${TOUR_MISSIONS.length} salas`
+    });
+  }
+}
+
+// --- Flash visual verde/celeste para celebración de misiones ---
+function _flashScreenSuccess() {
+  const overlay = document.getElementById('elevator-overlay');
+  overlay.innerHTML = `
+    <div class="elevator-msg" style="opacity: 1; transform: translate(-50%, -50%) scale(1.1); transition: transform 0.4s;">
+      <div style="font-size: 56px; margin-bottom: 12px; filter: drop-shadow(0 0 10px rgba(0, 212, 255, 0.6));">🎉</div>
+      <div style="font-size: 22px; font-weight: 700; color: #ffffff; text-transform: uppercase; letter-spacing: 2px;">¡Objetivo Completado!</div>
+    </div>
+  `;
+  overlay.style.background = 'rgba(0, 180, 216, 0.45)';
+  overlay.classList.add('active');
+
+  setTimeout(() => {
+    overlay.style.background = 'rgba(0, 85, 164, 0)';
+    overlay.classList.remove('active');
+    overlay.innerHTML = '';
+  }, 1300);
+}
 
 // ─── Arrancar ────────────────────────────────────────────
 init().catch(err => {
