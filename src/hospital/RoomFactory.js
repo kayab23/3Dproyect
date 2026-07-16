@@ -15,11 +15,7 @@ const MAT_RED = new THREE.MeshStandardMaterial({ color: 0xdd2222, roughness: 0.5
 export class RoomFactory {
   constructor(scene) {
     this.scene = scene;
-    this.avatars = [];
-    this._spawned = false;
-
     this._initECGCanvas();
-    this._initAvatars();
   }
 
   // Inicializar textura dinámica de monitor de signos vitales (ECG)
@@ -122,106 +118,7 @@ export class RoomFactory {
     this.ecgTexture.needsUpdate = true;
   }
 
-  // Inicializar e instanciar avatares
-  _initAvatars() {
-    this._loadKeyedAvatar('/images/avatars/doctor_female.png', (tex) => {
-      this._texDoctorFemale = tex;
-      this._spawnStaticAvatars();
-    });
 
-    this._loadKeyedAvatar('/images/avatars/doctor_male.png', (tex) => {
-      this._texDoctorMale = tex;
-      this._spawnStaticAvatars();
-    });
-
-    this._loadKeyedAvatar('/images/avatars/patient.png', (tex) => {
-      this._texPatient = tex;
-      this._spawnStaticAvatars();
-    });
-  }
-
-  // Carga imagen, remueve el fondo negro y la convierte a textura de Three.js
-  _loadKeyedAvatar(path, onLoad) {
-    const loader = new THREE.TextureLoader();
-    loader.load(path, (texture) => {
-      const image = texture.image;
-      const canvas = document.createElement('canvas');
-      canvas.width = image.width;
-      canvas.height = image.height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(image, 0, 0);
-
-      // Procesar píxeles para remover fondo negro
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imgData.data;
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i];
-        const g = data[i+1];
-        const b = data[i+2];
-        if (r < 18 && g < 18 && b < 18) {
-          data[i+3] = 0; // Transparencia total
-        }
-      }
-      ctx.putImageData(imgData, 0, 0);
-
-      const keyedTex = new THREE.CanvasTexture(canvas);
-      keyedTex.colorSpace = THREE.SRGBColorSpace;
-      onLoad(keyedTex);
-    });
-  }
-
-  _spawnStaticAvatars() {
-    if (!this._texDoctorFemale || !this._texDoctorMale || !this._texPatient) return;
-    if (this._spawned) return;
-    this._spawned = true;
-
-    // 1. Recepcionista de recepción en el lobby
-    this._createStandingAvatar(0, 0, -1.3, 1.35, this._texDoctorFemale);
-
-    // 2. Doctor de guardia en Urgencias
-    this._createStandingAvatar(-18.5, 0, 3.0, 1.35, this._texDoctorMale);
-
-    // 3. Paciente acostado en camilla de Urgencias
-    this._createLyingAvatar(-16.0, 0.76, 4.0, 1.7, 0.78, this._texPatient);
-
-    // 4. Cirujano en el Quirófano
-    this._createStandingAvatar(-4.5, 0, 1.8, 1.35, this._texDoctorMale);
-
-    // 5. Enfermera en Terapia Intermedia
-    this._createStandingAvatar(14.5, 0, 1.8, 1.35, this._texDoctorFemale);
-
-    // 6. Paciente en UCI (Planta Alta)
-    this._createLyingAvatar(4.0, 3.4 + 0.76, 6.4, 1.7, 0.78, this._texPatient);
-
-    // 7. Doctor en Telemedicina (Planta Alta)
-    this._createStandingAvatar(8.0, 3.4, -4.0, 1.35, this._texDoctorFemale);
-  }
-
-  // Crear avatar parado (siempre mira a la cámara)
-  _createStandingAvatar(x, y, z, height, texture) {
-    const mat = new THREE.SpriteMaterial({ map: texture, transparent: true });
-    const sprite = new THREE.Sprite(mat);
-    const aspect = 1.0; // asume imagen cuadrada
-    sprite.scale.set(height * aspect, height, 1);
-    sprite.position.set(x, y + height / 2, z);
-    this.scene.add(sprite);
-    this.avatars.push(sprite);
-  }
-
-  // Crear avatar acostado horizontalmente sobre la camilla (no rota)
-  _createLyingAvatar(x, y, z, width, depth, texture) {
-    const geo = new THREE.PlaneGeometry(width, depth);
-    const mat = new THREE.MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      side: THREE.DoubleSide
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.rotation.x = -Math.PI / 2; // Acostado
-    mesh.rotation.z = Math.PI / 2;  // Orientar a lo largo de la cama
-    mesh.position.set(x, y + 0.02, z);
-    this.scene.add(mesh);
-  }
 
   // Decorar salas segun tipo
   decorateRoom(areaDef) {
