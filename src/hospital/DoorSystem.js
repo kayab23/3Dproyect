@@ -22,7 +22,7 @@ export class DoorSystem {
   }
 
   // Crea una puerta entre dos áreas
-  createDoor(x, y, z, isXAxis = true, label = '') {
+  createDoor(x, y, z, isXAxis = true, label = '', parentGroup = this.scene) {
     const group = new THREE.Group();
     const doorW = 1.4;
     const doorH = 2.4;
@@ -37,12 +37,13 @@ export class DoorSystem {
     mesh.castShadow = true;
     group.add(mesh);
     group.position.set(x, y + doorH / 2, z);
+    group.userData._baseY = y + doorH / 2;
     group.userData.isOpen = false;
     group.userData.isXAxis = isXAxis;
     group.userData.doorMesh = mesh;
     group.userData.label = label;
 
-    this.scene.add(group);
+    parentGroup.add(group);
     this.collision.addWall(mesh);
 
     this._doors.push(group);

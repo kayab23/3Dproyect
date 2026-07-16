@@ -49,6 +49,9 @@ const TOUR_MISSIONS = [
 let currentMissionIndex = 0;
 const visitedAreas = new Set();
 let waypointIndicator = null;
+let hospitalBuilder = null;
+let currentFloorY = 8.0;
+let targetFloorY = 8.0;
 
 let appState = APP_STATE.LOADING;
 
@@ -70,12 +73,14 @@ async function init() {
   // ─── Construir Hospital ──────────────────────────────────
   const builder = new HospitalBuilder(engine.scene, lighting, collision);
   builder.build();
+  hospitalBuilder = builder;
   loadingScreen.setProgress(50);
 
   // ─── Decorar Habitaciones ───────────────────────────────
   const roomFactory = new RoomFactory(engine.scene);
   for (const area of AREA_DEFINITIONS) {
-    roomFactory.decorateRoom(area);
+    const parentGroup = area.y > 0 ? builder.upperFloorGroup : builder.groundFloorGroup;
+    roomFactory.decorateRoom(area, parentGroup);
   }
   loadingScreen.setProgress(65);
 
@@ -84,13 +89,14 @@ async function init() {
   // Puertas en las entradas de cada área (entre pasillo y sala)
   for (const area of AREA_DEFINITIONS) {
     const isX = area.w > area.d;
-    doors.createDoor(area.cx, area.y, area.cz - area.d / 2, !isX, area.name);
+    const parentGroup = area.y > 0 ? builder.upperFloorGroup : builder.groundFloorGroup;
+    doors.createDoor(area.cx, area.y, area.cz - area.d / 2, !isX, area.name, parentGroup);
   }
   loadingScreen.setProgress(75);
 
   // ─── Hotspots ────────────────────────────────────────────
   const areaManager = new AreaManager(engine.scene, lighting, collision);
-  areaManager.buildHotspotsSync(THREE);
+  areaManager.buildHotspotsSync(THREE, builder.groundFloorGroup, builder.upperFloorGroup);
   loadingScreen.setProgress(85);
 
   // ─── Waypoint 3D (Rayo de luz guía) ─────────────────────
@@ -156,6 +162,7 @@ async function init() {
 
   // ─── Mostrar bienvenida ──────────────────────────────────
   appState = APP_STATE.WELCOME;
+  engine.setCameraMode('global');
   welcome.show();
 
   // ─── Event: iniciar recorrido (entra a Vista Global interactiva) ──────
@@ -163,6 +170,7 @@ async function init() {
     welcome.hide();
     appState = 'GLOBAL_VIEW';
     engine.orbitControls.autoRotate = false;
+    engine.setCameraMode('global');
     hud.show();
     minimap.show();
     EventBus.emit('camera:mode:updated', { mode: 'global' });
@@ -265,9 +273,17 @@ async function init() {
 
   // ─── Game Loop ───────────────────────────────────────────
   engine.onUpdate((dt, elapsed) => {
+    // Interpolar la posición vertical de la Planta Alta (Exploded View)
+    if (Math.abs(currentFloorY - targetFloorY) > 0.001) {
+      currentFloorY += (targetFloorY - currentFloorY) * dt * 5.5;
+      if (hospitalBuilder) {
+        hospitalBuilder.upperFloorGroup.position.y = currentFloorY;
+      }
+    }
+
     // Actualizar proyección 2D de etiquetas de sala
     const isGlobal = appState === 'GLOBAL_VIEW' || appState === APP_STATE.WELCOME || appState === 'GLOBAL_VIEW_TWEEN';
-    hud.updateRoomLabels(engine.camera, isGlobal ? 'global' : 'fps');
+    hud.updateRoomLabels(engine.camera, isGlobal ? 'global' : 'fps', currentFloorY);
 
     // Animación de los monitores de signos vitales (ECG dinámico)
     roomFactory.update(dt, elapsed);
@@ -320,8 +336,10 @@ async function init() {
 // ─── Transición a vista FPS con zoom ───────────────────────
 function _transitionToAreaFPS(area, engine, controls, lighting) {
   appState = 'GLOBAL_VIEW_TWEEN';
+  targetFloorY = 0.0; // Implosionar plantas
   controls.resetKeys();
   engine.orbitControls.enabled = false;
+  engine.setCameraMode('fps'); // Forzar renderizado en perspectiva
 
   const targetPos = new THREE.Vector3(area.cx, area.y + PLAYER_HEIGHT, area.cz);
   const targetLook = new THREE.Vector3(area.cx, area.y + PLAYER_HEIGHT, area.cz - 2);
@@ -336,15 +354,16 @@ function _transitionToAreaFPS(area, engine, controls, lighting) {
 // ─── Transición a vista global maqueta 3D ───────────────────
 function _transitionToGlobalView(engine, controls, lighting) {
   appState = 'GLOBAL_VIEW_TWEEN';
+  targetFloorY = 8.0; // Explosionar plantas (Vista Isométrica Explotada)
   controls.unlock();
   controls.resetKeys();
 
-  const targetPos = new THREE.Vector3(28, 22, 28);
-  const targetLook = new THREE.Vector3(0, 2, 3);
+  const targetPos = new THREE.Vector3(38, 28, 38);
+  const targetLook = new THREE.Vector3(0, 0, 0);
 
   engine.tweenCamera(targetPos, targetLook, 1.2, () => {
     appState = 'GLOBAL_VIEW';
-    engine.orbitControls.enabled = true;
+    engine.setCameraMode('global'); // Activar cámara ortográfica
     engine.orbitControls.target.copy(targetLook);
     EventBus.emit('camera:mode:updated', { mode: 'global' });
   });

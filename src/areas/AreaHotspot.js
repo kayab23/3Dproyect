@@ -8,8 +8,9 @@ import { EventBus } from '../utils/helpers.js';
 // ============================================================
 
 export class AreaHotspot {
-  constructor(scene, collisionSystem, equipmentId, areaId, position) {
+  constructor(scene, collisionSystem, equipmentId, areaId, position, parentGroup = scene) {
     this.scene = scene;
+    this.parentGroup = parentGroup;
     this.equipmentId = equipmentId;
     this.areaId = areaId;
     this.position = position.clone();
@@ -65,7 +66,7 @@ export class AreaHotspot {
     this._inner.userData.hotspot = this;
     this._outer.userData.hotspot = this;
 
-    this.scene.add(this.group);
+    this.parentGroup.add(this.group);
   }
 
   // Llamar desde el game loop

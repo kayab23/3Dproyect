@@ -4,7 +4,8 @@ import { AREA_DEFINITIONS } from '../areas/areaDefinitions.js';
 
 // ============================================================
 // ROOM FACTORY — Decora cada área según su tipo
-// Añade mobiliario detallado, pantallas de ECG animadas y avatares 2.5D
+// Añade mobiliario detallado y pantallas de ECG animadas
+// Soporta la adición de elementos al grupo de planta correspondiente (Vista Explotada)
 // ============================================================
 
 // Materiales base compartidos
@@ -15,6 +16,7 @@ const MAT_RED = new THREE.MeshStandardMaterial({ color: 0xdd2222, roughness: 0.5
 export class RoomFactory {
   constructor(scene) {
     this.scene = scene;
+    this.activeGroup = scene;
     this._initECGCanvas();
   }
 
@@ -118,10 +120,9 @@ export class RoomFactory {
     this.ecgTexture.needsUpdate = true;
   }
 
-
-
   // Decorar salas segun tipo
-  decorateRoom(areaDef) {
+  decorateRoom(areaDef, parentGroup = this.scene) {
+    this.activeGroup = parentGroup;
     const { id, cx, cz, w, d, y } = areaDef;
     this._addAreaSign(areaDef);
 
@@ -152,7 +153,7 @@ export class RoomFactory {
       })
     );
     plaque.position.set(area.cx, area.y + 2.6, area.cz - area.d / 2 + 0.08);
-    this.scene.add(plaque);
+    this.activeGroup.add(plaque);
   }
 
   // 🏥 Camilla Clínica Detallada (Estructura de 3 capas + IV pole + IV suero)
@@ -222,7 +223,7 @@ export class RoomFactory {
     group.add(bag);
 
     group.position.set(x, y, z);
-    this.scene.add(group);
+    this.activeGroup.add(group);
   }
 
   // 📺 Monitor Clínico Premium con ECG Animado
@@ -236,7 +237,7 @@ export class RoomFactory {
 
     stand.castShadow = true;
     screen.castShadow = true;
-    this.scene.add(stand, screen);
+    this.activeGroup.add(stand, screen);
   }
 
   _addGasCylinder(x, y, z) {
@@ -244,7 +245,7 @@ export class RoomFactory {
     const mesh = new THREE.Mesh(geo, MAT_METAL);
     mesh.position.set(x, y + 0.7, z);
     mesh.castShadow = true;
-    this.scene.add(mesh);
+    this.activeGroup.add(mesh);
   }
 
   _makeUrgencias(cx, y, cz, w, d) {
@@ -256,7 +257,7 @@ export class RoomFactory {
     const carro = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.0, 0.8), MAT_RED);
     carro.position.set(cx + 2.5, y + 0.5, cz + 2.0);
     carro.castShadow = true;
-    this.scene.add(carro);
+    this.activeGroup.add(carro);
   }
 
   _makeQuirofano(cx, y, cz, w, d) {
@@ -264,12 +265,12 @@ export class RoomFactory {
     const table = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.1, 1.9), MAT_METAL);
     table.position.set(cx, y + 1.0, cz);
     table.castShadow = true;
-    this.scene.add(table);
+    this.activeGroup.add(table);
 
     // Lámpara cielítica de quirófano
     const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 0.15, 16), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffee, emissiveIntensity: 1.5 }));
     lamp.position.set(cx, y + ROOM_HEIGHT - 0.1, cz);
-    this.scene.add(lamp);
+    this.activeGroup.add(lamp);
 
     // Monitores duales
     this._addMonitor(cx - 2.2, y, cz - 1.0);
@@ -296,7 +297,7 @@ export class RoomFactory {
     // Incubadora
     const incub = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.9, 1.2), new THREE.MeshStandardMaterial({ color: 0xddeeff, transparent: true, opacity: 0.7 }));
     incub.position.set(cx + 2.2, y + 0.45, cz);
-    this.scene.add(incub);
+    this.activeGroup.add(incub);
     this._addMonitor(cx - 1.8, y, cz);
   }
 
@@ -304,7 +305,7 @@ export class RoomFactory {
     for (let i = 0; i < 3; i++) {
       const incub = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.9, 1.2), new THREE.MeshStandardMaterial({ color: 0xddeeff, transparent: true, opacity: 0.7 }));
       incub.position.set(cx - 1.6 + i * 1.6, y + 0.45, cz);
-      this.scene.add(incub);
+      this.activeGroup.add(incub);
     }
   }
 
@@ -315,11 +316,11 @@ export class RoomFactory {
     );
     tomo.rotation.y = Math.PI / 2;
     tomo.position.set(cx, y + 1.0, cz);
-    this.scene.add(tomo);
+    this.activeGroup.add(tomo);
 
     const mesa = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.1, 2.5), MAT_METAL);
     mesa.position.set(cx, y + 0.8, cz);
-    this.scene.add(mesa);
+    this.activeGroup.add(mesa);
     this._addMonitor(cx + 2.2, y, cz);
   }
 
@@ -329,7 +330,7 @@ export class RoomFactory {
       chair.position.set(cx + i * 2.2, y + 0.5, cz);
       const machine = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.4, 0.55), MAT_METAL);
       machine.position.set(cx + i * 2.2 + 0.8, y + 0.7, cz);
-      this.scene.add(chair, machine);
+      this.activeGroup.add(chair, machine);
     }
   }
 
@@ -337,7 +338,7 @@ export class RoomFactory {
     this._addMonitor(cx, y, cz);
     const tower = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.5, 0.4), MAT_METAL);
     tower.position.set(cx + 1.2, y + 0.75, cz);
-    this.scene.add(tower);
+    this.activeGroup.add(tower);
   }
 
   _makeGas(cx, y, cz, w, d) {

@@ -20,9 +20,11 @@ export class AreaManager {
   }
 
   // Crear hotspots de todas las áreas (llamar con THREE ya importado)
-  buildHotspotsSync(THREE) {
+  buildHotspotsSync(THREE, groundGroup, upperGroup) {
     for (const area of this._areas) {
       if (!area.equipmentIds || area.equipmentIds.length === 0) continue;
+
+      const parentGroup = area.y > 0 ? upperGroup : groundGroup;
 
       for (let i = 0; i < area.equipmentIds.length; i++) {
         const eqId = area.equipmentIds[i];
@@ -38,7 +40,8 @@ export class AreaManager {
           this.collision,
           eqId,
           area.id,
-          new THREE.Vector3(hx, hy, hz)
+          new THREE.Vector3(hx, hy, hz),
+          parentGroup
         );
         this._hotspots.push(hotspot);
       }

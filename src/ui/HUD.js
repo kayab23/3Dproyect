@@ -173,7 +173,7 @@ export class HUD {
   }
 
   // Actualiza la posición 2D de las etiquetas de sala proyectando sus coordenadas 3D
-  updateRoomLabels(camera, mode) {
+  updateRoomLabels(camera, mode, upperFloorOffset = 0.0) {
     if (mode === 'global') {
       this._labelsContainer.classList.remove('hidden');
       const tempV = new THREE.Vector3();
@@ -181,8 +181,9 @@ export class HUD {
       for (const item of this._labels) {
         const { el, area } = item;
 
-        // Proyectar el centro de la sala
-        tempV.set(area.cx, area.y + 2.0, area.cz);
+        // Proyectar el centro de la sala considerando la elevación por Vista Explotada
+        const offset = area.y > 0 ? upperFloorOffset : 0.0;
+        tempV.set(area.cx, area.y + 2.0 + offset, area.cz);
         tempV.project(camera);
 
         // Si la sala queda detrás de la cámara, ocultar

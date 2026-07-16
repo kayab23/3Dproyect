@@ -37,21 +37,21 @@ export class WallBuilder {
 
   // Crear pared sólida
   // axis: 'x' o 'z', pos: {x,y,z}, length, height
-  createSolidWall(x, y, z, width, height, depth) {
+  createSolidWall(x, y, z, width, height, depth, parentGroup = this.scene) {
     const geo = new THREE.BoxGeometry(width, height, depth);
     const mesh = new THREE.Mesh(geo, this._matWall);
     mesh.position.set(x, y + height / 2, z);
     mesh.receiveShadow = true;
     mesh.castShadow = false; // paredes no necesitan cast shadow
     mesh.userData.isWall = true;
-    this.scene.add(mesh);
+    parentGroup.add(mesh);
     this.collision?.addWall(mesh);
     return mesh;
   }
 
   // Crear pared interior con ventana de vidrio
   // La ventana ocupa el centro (ancho 60%), el resto son paneles sólidos
-  createGlassWall(x, y, z, length, height, isXAxis = true) {
+  createGlassWall(x, y, z, length, height, isXAxis = true, parentGroup = this.scene) {
     const group = new THREE.Group();
 
     const solidW = length * 0.12;
@@ -94,13 +94,11 @@ export class WallBuilder {
 
     group.add(left, right, top, bottom, glass);
     group.position.set(x, y + height / 2, z);
-    this.scene.add(group);
+    parentGroup.add(group);
     group.updateMatrixWorld(true);
 
     // Colisión de los paneles sólidos — left/right ya heredan la posición
     // del grupo vía la jerarquía de la escena, no hay que sumarla de nuevo
-    // (sumarla aquí duplicaba el offset y generaba cajas de colisión
-    // flotando lejos de la pared visible, bloqueando el paso al azar).
     this.collision?.addWall(left);
     this.collision?.addWall(right);
 
@@ -108,7 +106,7 @@ export class WallBuilder {
   }
 
   // Crear pared de vidrio curvo (esquina de cápsula)
-  createCurvedGlassWall(x, y, z, radius, angleStart, angleLength, height) {
+  createCurvedGlassWall(x, y, z, radius, angleStart, angleLength, height, parentGroup = this.scene) {
     const group = new THREE.Group();
 
     // Vidrio curvo
@@ -137,7 +135,7 @@ export class WallBuilder {
     group.add(bottomFrame);
 
     group.position.set(x, y + height / 2, z);
-    this.scene.add(group);
+    parentGroup.add(group);
 
     // Registrar para colisión (evitar atravesar el vidrio curvo)
     // El raycast simple funciona con cilindros
