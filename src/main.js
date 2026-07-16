@@ -10,6 +10,7 @@ import { Lighting }        from './core/Lighting.js';
 import { HospitalBuilder } from './hospital/HospitalBuilder.js';
 import { RoomFactory }     from './hospital/RoomFactory.js';
 import { DoorSystem }      from './hospital/DoorSystem.js';
+import { FloorPlan }       from './hospital/FloorPlan.js';
 
 // Áreas
 import { AreaManager }     from './areas/AreaManager.js';
@@ -52,6 +53,7 @@ let waypointIndicator = null;
 let hospitalBuilder = null;
 let currentFloorY = 8.0;
 let targetFloorY = 8.0;
+let elevatorTransitionActive = false;
 
 let appState = APP_STATE.LOADING;
 
@@ -305,6 +307,23 @@ async function init() {
     // Mover al jugador
     controls.update(dt, elapsed, collision);
 
+    // Detección de entrada al elevador (Cambio de Planta)
+    const e = FloorPlan.elevator;
+    const playerPos = engine.camera.position;
+    const inElevatorX = Math.abs(playerPos.x - e.x) < (e.w / 2);
+    const inElevatorZ = Math.abs(playerPos.z - e.z) < (e.d / 2);
+
+    if (inElevatorX && inElevatorZ && !elevatorTransitionActive) {
+      const onGround = Math.abs(playerPos.y - (e.groundY + PLAYER_HEIGHT)) < 0.5;
+      const onUpper = Math.abs(playerPos.y - (e.upperY + PLAYER_HEIGHT)) < 0.5;
+
+      if (onGround) {
+        _useElevator(engine, controls, e.upperY, 'Planta Alta');
+      } else if (onUpper) {
+        _useElevator(engine, controls, e.groundY, 'Planta Baja');
+      }
+    }
+
     // Actualizar puertas
     doors.update(engine.camera.position);
 
@@ -386,6 +405,36 @@ function _teleportToArea(area, engine, controls, lighting) {
     lighting.setActiveArea(area.id);
     setTimeout(() => overlay.classList.remove('active'), 400);
   }, 400);
+}
+
+// 🛗 Animación y teletransporte del elevador (Cambio de planta a pie)
+function _useElevator(engine, controls, targetY, floorName) {
+  elevatorTransitionActive = true;
+  controls.resetKeys();
+
+  const overlay = document.getElementById('elevator-overlay');
+  overlay.innerHTML = `
+    <div class="elevator-msg">
+      <div class="elevator-icon" style="font-size: 56px; margin-bottom: 10px;">🛗</div>
+      <div class="elevator-text" style="font-size: 18px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Elevador en movimiento</div>
+      <div style="font-size: 14px; color: #00d4ff; margin-top: 5px; font-weight: 500;">Llegando a la ${floorName}...</div>
+    </div>
+  `;
+  overlay.classList.add('active');
+
+  setTimeout(() => {
+    engine.camera.position.y = targetY + PLAYER_HEIGHT;
+    controls.setBaseY(targetY);
+
+    setTimeout(() => {
+      overlay.classList.remove('active');
+      overlay.innerHTML = '';
+      // Cooldown de 1.5 segundos para evitar bucles al salir
+      setTimeout(() => {
+        elevatorTransitionActive = false;
+      }, 1500);
+    }, 450);
+  }, 950);
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
