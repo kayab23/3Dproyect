@@ -43,6 +43,7 @@ export class HospitalBuilder {
     this._buildCorridors();
     this._buildElevator();
     this._buildExteriorWalls();
+    this._buildLandmarks();
     this._addLightsToAreas();
     this._commitMergedGeometry();
   }
@@ -62,44 +63,48 @@ export class HospitalBuilder {
       ceilMesh.position.set(room.x + room.w / 2, baseY + ROOM_HEIGHT + FLOOR_THICKNESS / 2, room.z + room.d / 2);
       this.scene.add(ceilMesh);
 
-      // Pared de acento (fondo de sala) con color del área
-      const accentMat = new THREE.MeshStandardMaterial({
-        color: room.color,
-        roughness: 0.7,
-        metalness: 0.05,
-        opacity: 0.12,
-        transparent: true,
+      // 🔧 Ajuste — el muro trasero (Sur) lleva un tinte pastel del color de
+      // área en vez de un panel de color saturado aparte: la referencia es
+      // blanco/azul pálido en general, con solo un guiño de color por zona.
+      const pastel = new THREE.Color(room.color).lerp(new THREE.Color(0xffffff), 0.82);
+      const accentWallMat = new THREE.MeshStandardMaterial({
+        color: pastel,
+        roughness: 0.8,
+        metalness: 0.0,
       });
-      const accentGeo = new THREE.BoxGeometry(room.w, ROOM_HEIGHT, WALL_THICKNESS);
-      const accentMesh = new THREE.Mesh(accentGeo, accentMat);
-      accentMesh.position.set(
-        room.x + room.w / 2,
-        baseY + ROOM_HEIGHT / 2,
-        room.z  // pared trasera
-      );
-      this.scene.add(accentMesh);
 
-      // Paredes laterales sólidas (simplificado — una por lado)
       const wh = ROOM_HEIGHT;
+      const cx = room.x + room.w / 2;
+      const cz = room.z + room.d / 2;
 
-      // Pared Norte
+      // 🔧 Ajuste — coordenadas centradas correctamente por eje (antes las
+      // paredes Norte/Sur/Oeste usaban la esquina de la sala como centro,
+      // desalineándolas del volumen real de la habitación).
+
+      // Pared Sur (trasera) — sólida, con tinte pastel del área
+      const southGeo = new THREE.BoxGeometry(room.w, wh, WALL_THICKNESS);
+      const southMesh = new THREE.Mesh(southGeo, accentWallMat);
+      southMesh.position.set(cx, baseY + wh / 2, room.z + room.d);
+      southMesh.receiveShadow = true;
+      southMesh.userData.isWall = true;
+      this.scene.add(southMesh);
+      this.collision.addWall(southMesh);
+
+      // Pared Oeste — sólida (estructural)
       this.wallBuilder.createSolidWall(
-        room.x, baseY, room.z,
-        room.w, wh, WALL_THICKNESS
-      );
-      // Pared Sur
-      this.wallBuilder.createSolidWall(
-        room.x, baseY, room.z + room.d,
-        room.w, wh, WALL_THICKNESS
-      );
-      // Pared Oeste
-      this.wallBuilder.createSolidWall(
-        room.x, baseY, room.z,
+        room.x, baseY, cz,
         WALL_THICKNESS, wh, room.d
       );
-      // Pared Este (con ventana de vidrio hacia el pasillo)
+
+      // 🔧 Ajuste — más vidrio, menos muro sólido (look esmerilado de la referencia)
+      // Pared Norte — vidrio (hacia sala/pasillo contiguo)
       this.wallBuilder.createGlassWall(
-        room.x + room.w, baseY, room.z + room.d / 2,
+        cx, baseY, room.z,
+        room.w, wh, true
+      );
+      // Pared Este — vidrio (hacia el pasillo)
+      this.wallBuilder.createGlassWall(
+        room.x + room.w, baseY, cz,
         room.d, wh, false
       );
     }
@@ -159,38 +164,34 @@ export class HospitalBuilder {
     shaftMesh.userData.isWall = false; // No bloquea
   }
 
+  // 🔧 Ajuste — silueta exterior redondeada (cápsula) en vez de caja recta,
+  // para acercarse al edificio de esquinas curvas de la imagen de referencia.
   _buildExteriorWalls() {
-    // Paredes exteriores del edificio completo (bounding box grande)
     const totalW = 45;
     const totalD = 35;
     const cx = 0;
     const cz = 5;
     const wh = ROOM_HEIGHT;
+    const radius = 6; // radio de esquina
 
     const extMat = new THREE.MeshStandardMaterial({
       color: 0xe8edf2,
       roughness: 0.9,
+      side: THREE.DoubleSide,
     });
 
-    const walls = [
-      // Norte
-      { x: cx, z: cz - totalD / 2, w: totalW, h: wh, d: WALL_THICKNESS },
-      // Sur
-      { x: cx, z: cz + totalD / 2, w: totalW, h: wh, d: WALL_THICKNESS },
-      // Oeste
-      { x: cx - totalW / 2, z: cz, w: WALL_THICKNESS, h: wh, d: totalD },
-      // Este
-      { x: cx + totalW / 2, z: cz, w: WALL_THICKNESS, h: wh, d: totalD },
-    ];
+    const outerShape = this._roundedRectShape(totalW, totalD, radius);
+    const innerShape = this._roundedRectShape(totalW - WALL_THICKNESS * 2, totalD - WALL_THICKNESS * 2, Math.max(radius - WALL_THICKNESS, 0.1));
+    outerShape.holes.push(innerShape);
 
-    for (const w of walls) {
-      const geo = new THREE.BoxGeometry(w.w, w.h, w.d);
-      const mesh = new THREE.Mesh(geo, extMat);
-      mesh.position.set(w.x, w.h / 2, w.z);
-      mesh.userData.isWall = true;
-      this.scene.add(mesh);
-      this.collision.addWall(mesh);
-    }
+    const shellGeo = new THREE.ExtrudeGeometry(outerShape, { depth: wh, bevelEnabled: false, curveSegments: 24 });
+    shellGeo.rotateX(-Math.PI / 2);
+    shellGeo.translate(cx, 0, cz);
+    const shellMesh = new THREE.Mesh(shellGeo, extMat);
+    shellMesh.userData.isWall = true;
+    shellMesh.receiveShadow = true;
+    this.scene.add(shellMesh);
+    this.collision.addWall(shellMesh);
 
     // Suelo exterior (gran plano)
     const groundGeo = new THREE.PlaneGeometry(200, 200);
@@ -200,6 +201,126 @@ export class HospitalBuilder {
     ground.position.y = -0.01;
     ground.receiveShadow = true;
     this.scene.add(ground);
+  }
+
+  // Rectángulo con esquinas redondeadas centrado en (0,0), tamaño w×d
+  _roundedRectShape(w, d, r) {
+    const hw = w / 2, hd = d / 2;
+    const shape = new THREE.Shape();
+    shape.moveTo(-hw + r, -hd);
+    shape.lineTo(hw - r, -hd);
+    shape.absarc(hw - r, -hd + r, r, -Math.PI / 2, 0, false);
+    shape.lineTo(hw, hd - r);
+    shape.absarc(hw - r, hd - r, r, 0, Math.PI / 2, false);
+    shape.lineTo(-hw + r, hd);
+    shape.absarc(-hw + r, hd - r, r, Math.PI / 2, Math.PI, false);
+    shape.lineTo(-hw, -hd + r);
+    shape.absarc(-hw + r, -hd + r, r, Math.PI, Math.PI * 1.5, false);
+    return shape;
+  }
+
+  // 🔧 Ajuste — remates fieles a la imagen de referencia: helipuerto con
+  // helicóptero sobre Hospitalización, y vehículos (ambulancia/SUV) afuera.
+  _buildLandmarks() {
+    this._buildHelipad();
+    this._buildVehicles();
+  }
+
+  _buildHelipad() {
+    const hospitalizacion = FloorPlan.upperFloor.find(r => r.id === 'hospitalizacion');
+    if (!hospitalizacion) return;
+
+    const baseY = FLOOR_Y.UPPER + ROOM_HEIGHT + 2.5;
+    const cx = hospitalizacion.x + hospitalizacion.w / 2;
+    const cz = hospitalizacion.z + hospitalizacion.d / 2;
+
+    // Torre de soporte
+    const towerMat = new THREE.MeshStandardMaterial({ color: 0x33475b, roughness: 0.6, metalness: 0.3 });
+    const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.0, baseY - (FLOOR_Y.UPPER + ROOM_HEIGHT), 24), towerMat);
+    tower.position.set(cx, FLOOR_Y.UPPER + ROOM_HEIGHT + (baseY - (FLOOR_Y.UPPER + ROOM_HEIGHT)) / 2, cz);
+    tower.userData.isWall = true;
+    this.scene.add(tower);
+    this.collision.addWall(tower);
+
+    // Plataforma circular con aro "H"
+    const padMat = new THREE.MeshStandardMaterial({ color: COLORS.KEZEL_BLUE, roughness: 0.5 });
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, 0.3, 32), padMat);
+    pad.position.set(cx, baseY, cz);
+    pad.userData.isWall = true;
+    this.scene.add(pad);
+    this.collision.addWall(pad);
+
+    const ringMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(3.3, 3.7, 32), ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(cx, baseY + 0.16, cz);
+    this.scene.add(ring);
+
+    // Helicóptero simple (fuselaje + cabina + rotores)
+    const heliMat = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.4, metalness: 0.3 });
+    const heli = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.7, 2.2, 4, 12), heliMat);
+    body.rotation.z = Math.PI / 2;
+    heli.add(body);
+    const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.25, 2.2, 8), heliMat);
+    tail.rotation.z = Math.PI / 2;
+    tail.position.set(-2.3, 0.3, 0);
+    heli.add(tail);
+    const rotorMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5 });
+    const rotor = new THREE.Mesh(new THREE.BoxGeometry(7.5, 0.05, 0.15), rotorMat);
+    rotor.position.set(0, 0.9, 0);
+    heli.add(rotor);
+    heli.position.set(cx, baseY + 1.1, cz);
+    this.scene.add(heli);
+  }
+
+  _buildVehicles() {
+    const ambulancia = FloorPlan.groundFloor.find(r => r.id === 'ambulancia');
+    if (ambulancia) {
+      const amb = this._makeSimpleVehicle(0xffffff, 0xcc2222);
+      amb.position.set(ambulancia.x - 4, FLOOR_Y.GROUND, ambulancia.z + ambulancia.d / 2);
+      amb.rotation.y = Math.PI / 2;
+      this.scene.add(amb);
+    }
+
+    const endoscopia = FloorPlan.groundFloor.find(r => r.id === 'endoscopia');
+    if (endoscopia) {
+      const suv = this._makeSimpleVehicle(0xf2f2f2, 0x0055a4);
+      suv.position.set(endoscopia.x + endoscopia.w + 3, FLOOR_Y.GROUND, endoscopia.z + endoscopia.d + 3);
+      this.scene.add(suv);
+    }
+  }
+
+  // Vehículo de bloque simple (placeholder de baja poligonización)
+  _makeSimpleVehicle(bodyColor, accentColor) {
+    const group = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.4, metalness: 0.3 });
+    const accentMat = new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.4 });
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.2, metalness: 0.5 });
+
+    const base = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.9, 4.4), bodyMat);
+    base.position.y = 0.55;
+    base.castShadow = true;
+    group.add(base);
+
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.8, 2.2), glassMat);
+    cabin.position.set(0, 1.35, -0.6);
+    group.add(cabin);
+
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.02, 0.25, 4.4), accentMat);
+    stripe.position.y = 0.55;
+    group.add(stripe);
+
+    const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 12);
+    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
+    for (const [wx, wz] of [[-1, -1.5], [1, -1.5], [-1, 1.5], [1, 1.5]]) {
+      const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(wx, 0.35, wz);
+      group.add(wheel);
+    }
+
+    return group;
   }
 
   _addLightsToAreas() {

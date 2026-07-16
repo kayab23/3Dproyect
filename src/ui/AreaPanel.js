@@ -57,18 +57,18 @@ export class AreaPanel {
           <div class="panel-subtitle">${equipment.length} equipo${equipment.length !== 1 ? 's' : ''} disponible${equipment.length !== 1 ? 's' : ''}</div>
         </div>
       </div>
+      <div class="panel-hint">Apunta con la mira a un equipo y presiona <span class="ctrl-key">E</span> para ver detalles</div>
       <div class="panel-grid" id="panel-grid">
         ${equipment.map(eq => this._cardHTML(eq)).join('')}
       </div>
     `;
 
-    // Bind clicks en tarjetas
-    this._el.querySelectorAll('.equip-card').forEach(card => {
-      card.addEventListener('click', () => {
-        const eqId = card.dataset.equipId;
-        EventBus.emit('hotspot:interact', { equipmentId: eqId, areaId: this._currentArea });
-      });
-    });
+    // 🔧 Ajuste — las tarjetas son solo referencia visual, no reciben clic:
+    // con PointerLockControls activo, los clics reales del navegador quedan
+    // fijos en el punto donde se activó el bloqueo del mouse y nunca llegan
+    // a este panel lateral (eso causaba que "se trabaran" al hacer clic).
+    // La interacción real ocurre vía raycast desde la mira (crosshair) + E,
+    // igual que con los hotspots 3D, que sí funciona bajo pointer lock.
 
     this._el.classList.add('visible');
     this._visible = true;

@@ -17,12 +17,15 @@ export class WallBuilder {
       roughness: 0.85,
       metalness: 0.0,
     });
-    this._matGlass = new THREE.MeshStandardMaterial({
-      color: COLORS.GLASS,
+    // Vidrio esmerilado — como los paneles translúcidos de la referencia
+    this._matGlass = new THREE.MeshPhysicalMaterial({
+      color: 0xdcecff,
       transparent: true,
-      opacity: 0.22,
-      roughness: 0.05,
-      metalness: 0.1,
+      opacity: 0.4,
+      roughness: 0.55,
+      metalness: 0.0,
+      transmission: 0.55,
+      thickness: 0.4,
       side: THREE.DoubleSide,
     });
     this._matFrame = new THREE.MeshStandardMaterial({
@@ -51,8 +54,8 @@ export class WallBuilder {
   createGlassWall(x, y, z, length, height, isXAxis = true) {
     const group = new THREE.Group();
 
-    const solidW = length * 0.2;
-    const glassW = length * 0.6;
+    const solidW = length * 0.12;
+    const glassW = length * 0.76;
     const frameH = 0.15;
 
     // Panel izquierdo sólido
@@ -92,10 +95,12 @@ export class WallBuilder {
     group.add(left, right, top, bottom, glass);
     group.position.set(x, y + height / 2, z);
     this.scene.add(group);
+    group.updateMatrixWorld(true);
 
-    // Agregar colisión a los paneles sólidos
-    left.position.add(group.position);
-    right.position.add(group.position);
+    // Colisión de los paneles sólidos — left/right ya heredan la posición
+    // del grupo vía la jerarquía de la escena, no hay que sumarla de nuevo
+    // (sumarla aquí duplicaba el offset y generaba cajas de colisión
+    // flotando lejos de la pared visible, bloqueando el paso al azar).
     this.collision?.addWall(left);
     this.collision?.addWall(right);
 
