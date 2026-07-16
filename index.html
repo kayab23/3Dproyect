@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hospital 3D Interactivo — Kezelmedica</title>
+  <meta name="description" content="Recorre virtualmente nuestro hospital 3D y explora los equipos médicos de alta tecnología que Kezelmedica ofrece para cada área hospitalaria." />
+  <meta name="keywords" content="Kezelmedica, equipos médicos, hospital 3D, UCI, quirófano, imagenología, ventiladores, monitores" />
+  <!-- Open Graph -->
+  <meta property="og:title" content="Hospital 3D Interactivo — Kezelmedica" />
+  <meta property="og:description" content="Explora nuestro hospital virtual y descubre los equipos médicos de cada área." />
+  <meta property="og:type" content="website" />
+  <!-- Fuente premium -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/styles/main.css" />
+</head>
+<body>
+  <!-- Canvas 3D -->
+  <canvas id="hospital-canvas"></canvas>
+
+  <!-- UI Overlay Containers -->
+  <div id="loading-screen"></div>
+  <div id="welcome-screen"></div>
+  <div id="hud"></div>
+  <div id="minimap-container"></div>
+  <div id="area-panel"></div>
+  <div id="product-modal"></div>
+  <div id="elevator-overlay"></div>
+
+  <!-- Crosshair -->
+  <div id="crosshair" class="crosshair hidden">
+    <div class="crosshair-dot"></div>
+  </div>
+
+  <!-- Interact Hint -->
+  <div id="interact-hint" class="interact-hint hidden">
+    <span class="key-badge">E</span> Ver equipo
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
